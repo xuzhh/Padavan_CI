@@ -1,8 +1,14 @@
-name: Build K2P rainbow kvr from vb1980 private repo
+name: Build K2P rainbow kvr from vb1980 kvr repo
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        type: choice
+        description: 'target to compile'
+        options:
+          - K2P
+          - K2P_nano
       firmwarever:
         description: 'firmware''s version'
         required: true
@@ -11,8 +17,8 @@ on:
         type: choice
         description: 'busybox''s version'
         options:
-        - 1.24.x
-        - 1.34.1
+          - 1.24.x
+          - 1.34.1
         default: '1.24.x'
       rainbowui:
         type: boolean
@@ -21,17 +27,17 @@ on:
       uploadwet:
         type: boolean
         description: 'whether to upload firmware to wetransfer'
-        default: 'true'
+        default: 'false'
       pushplus:
         type: boolean
         description: 'whether to notify through pushplus'
-        default: 'true'
+        default: 'false'
 env:
-  REPOSITORY_URL: https://vb1980:${{ secrets.PRIVREPOTOKEN }}@github.com/vb1980/my-padavan.git
+  REPOSITORY_URL: https://github.com/vb1980/Padavan-KVR.git
   TOOLCHAIN_URL: https://github.com/hanwckf/padavan-toolchain/releases/download/v1.1/mipsel-linux-uclibc.tar.xz
   WORK_PATH: /opt/rt-n56u
   TIME_ZONE: Asia/Shanghai
-  TARGET_NAME: K2P
+#  TARGET_NAME: K2P
   FIRMWARE_DATEPREFIX: $(date +"%Y%m%d")
   FIRMWARE_AUTHOR: vb1980
   FIRMWARE_PATH: /opt/firmwares
@@ -41,192 +47,204 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@main
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo apt-get update
-        sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot kmod \
-        cpio git python-docutils gettext automake autopoint texinfo build-essential help2man \
-        pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
-        sudo timedatectl set-timezone "$TIME_ZONE"
-    - name: Clone source code
-      run: |
-        git clone -b xray --depth=1 $REPOSITORY_URL $WORK_PATH
-        cd $WORK_PATH/toolchain-mipsel
-        mkdir -p toolchain-3.4.x
-        wget $TOOLCHAIN_URL
-        tar -xvf mipsel-linux-uclibc.tar.xz -C toolchain-3.4.x
-    - name: Set golang
-      run: |
-        cp -f bashScripts/go.sh $(pwd)
-        sudo chmod 777 ./go.sh
-        bash ./go.sh
-    - name: Set busybox's version to compile
-      run: |
-        cd $WORK_PATH/trunk/user/busybox
-        sed -i "s/SRC_NAME=busybox.*/SRC_NAME=busybox-${{ github.event.inputs.busyboxver }}/g" ./Makefile
-        cd $WORK_PATH/trunk
-        sed -i "s/busybox_id=.*/busybox_id=\"${{ github.event.inputs.busyboxver }}\"/g" ./build_firmware_modify
-    - name: Apply rainbow themes
-      if: github.event.inputs.rainbowui == 'true'
-      run: |
-        cd $WORK_PATH/trunk/user/www
-        sed -i "s/WEBUI_NAME=n56u_ribbon_fixed/WEBUI_NAME=n56u_rainbow/g" ./Makefile
-    - name: Custom config
-      run: |
-        cd $WORK_PATH/trunk
-        if [ ! -f configs/templates/$TARGET_NAME.config ] ; then
-        echo "configs/templates/${TARGET_NAME}.config not found"
-        exit 1
-        fi
-        cp -f configs/templates/$TARGET_NAME.config .config
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-        ################################################################################################
-        #因不同型号配置功能不一样，所以先把配置项删除，如果你自己要添加其他的，也要写上删除这一条，切记！！！
-        ################################################################################################
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER/d' .config #删除配置项SOFTETHERVPN
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT/d' .config #删除配置项SOFTETHERVPN
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD/d' .config #删除配置项SOFTETHERVPN   
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS/d' .config #删除配置项SS plus+
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SSSERVER/d' .config #删除配置项SS server
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER/d' .config #删除配置项DNSFORWARDER
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_ADBYBY/d' .config #删除配置项adbyby plus+
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config #删除配置项FRP Client
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPS/d' .config #删除配置项FRPS Server
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_NPC/d' .config #删除配置项NPC
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_TUNSAFE/d' .config #删除配置项TUNSAFE
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_ALIDDNS/d' .config #删除配置项阿里DDNS
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_ZEROTIER/d' .config #删除配置项ZEROTIER
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_CLOUDFLAREDDNS/d' .config #删除配置项CLOUDFLAREDDNS
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_NVPPROXY/d' .config #删除配置项NVPPROXY
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_DDNSTO/d' .config #删除配置项DDNSTO
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_WIREGUARD/d' .config #删除配置项WIREGUARD
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SMARTDNS/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SRELAY/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_KUMASOCKS/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_IPT2SOCKS/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_MICROSOCKS/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_OPENVPN/d' .config
-        #校园网相关开始
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config #删除配置项MENTOHUST
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config #删除配置项SCUTCLIENT
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_NAPT66/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_NJIT_CLIENT/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_MINIEAP/d' .config
-        sed -i '/CONFIG_FIRMWARE_INCLUDE_DOGCOM/d' .config
-        #校园网相关结束
-        sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
-        ######################################################################
-        #以下选项是定义你需要的功能（y=集成,n=忽略），重新写入到.config文件
-        ######################################################################
-        echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n" >> .config #SOFTETHERVPN
-        echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n" >> .config #SOFTETHERVPN
-        echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n" >> .config #SOFTETHERVPN
-        #科学相关
-        echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=y" >> .config #SS plus+
-        echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #集成v2ray执行文件（3.8M左右)
-        echo "CONFIG_FIRMWARE_INCLUDE_XRAY=y" >> .config #集成xray执行文件(5.6M左右)，可以代替v2ray，注：如果闪存太小不够还是建议使用v2ray
-        echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=y" >> .config #集成trojan执行文件(1.1M左右)
-        echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config # simple-obfs混淆插件
-        echo "CONFIG_FIRMWARE_INCLUDE_SSSERVER=n" >> .config #SS server
-        echo "CONFIG_FIRMWARE_INCLUDE_KUMASOCKS=n" >> .config #socks5
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_IPT2SOCKS=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_MICROSOCKS=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_SRELAY=n" >> .config #可以不集成
-        echo "CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n" >> .config #TUNSAFE
-        echo "CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n" >> .config #DNSFORWARDER
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPC=n" >> .config #内网穿透FRPC
-        echo "CONFIG_FIRMWARE_INCLUDE_FRPS=n" >> .config #内网穿透FRPS
-        echo "CONFIG_FIRMWARE_INCLUDE_NPC=n" >> .config #删除配置项NPC
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=y" >> .config #adbyby plus+
-        echo "CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=n" >> .config #KP广告过滤
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config #smartdns
-        echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=n" >> .config #smartdns二进制文件
-        echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n" >> .config
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=n" >> .config #阿里DDNS
-        echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
-        echo "CONFIG_FIRMWARE_INCLUDE_CLOUDFLAREDDNS=n" >> .config #CLOUDFLAREDDNS
-        echo "CONFIG_FIRMWARE_INCLUDE_NVPPROXY=n" >> .config #NVPPROXY
-        echo "CONFIG_FIRMWARE_INCLUDE_DDNSTO=n" >> .config #DDNSTO
-        echo "CONFIG_FIRMWARE_INCLUDE_WIREGUARD=n" >> .config #WIREGUARD
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config #在线文件管理服务
-        echo "CONFIG_FIRMWARE_INCLUDE_CADDYBIN=n" >> .config #集成caddu执行文件，此文件有13M,请注意固件大小。如果不集成，会从网上下载下来执行，不影响正常使用
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_WYY=n" >> .config #网易云解锁
-        echo "CONFIG_FIRMWARE_INCLUDE_WYYBIN=n" >> .config #网易云解锁GO版本执行文件（4M多）注意固件超大小,不集成会自动下载
-        #
-        echo "CONFIG_FIRMWARE_INCLUDE_OPENVPN=n" >> .config #openvpn
-        #校园网相关开始
-        echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #MENTOHUST
-        echo "CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n" >> .config #SCUTCLIENT
-        echo "CONFIG_FIRMWARE_INCLUDE_NJIT_CLIENT=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_MINIEAP=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_DOGCOM=n" >> .config
-        echo "CONFIG_FIRMWARE_INCLUDE_NAPT66=n" >> .config
-        #校园网相关结束
-        #########################################################################################
-        #自定义添加其它功能请参考源码configs/templates/目录下的config文件。按照上面的格式添加即可
-        #格式如下：
-        #sed -i '/自定义项/d' .config
-        #echo "自定义项=y" >> .config
-        sed -i "s/FIRMWARE_BUILDS_REV=.*/FIRMWARE_BUILDS_REV=${{ github.event.inputs.firmwarever }}/g" ./versions.inc
-        echo '更新版本号时间'
-        #########################################################################################
-    - name: Build firmware
-      run: |
-        cd $WORK_PATH/trunk
-        sudo ./clear_tree
-        sudo ./build_firmware_modify $TARGET_NAME 0
-        echo "FIRMWARE_DATEPREFIX=$(date +"%Y%m%d")" >> $GITHUB_ENV
-    - name: Organize firmware files
-      id: organize
-      run: |
-        mkdir -p $FIRMWARE_PATH/
-        cd $WORK_PATH/trunk
-        rainbow_Prefix=""
-        if [ "${{ github.event.inputs.rainbowui }}" = "true" ]
-        then
-        rainbow_Prefix="rainbow_"
-        fi
-        cd $WORK_PATH/trunk/images
-        for firmwarefile in $(ls *.trx)
-        do sudo mv $firmwarefile $FIRMWARE_PATH/${FIRMWARE_DATEPREFIX}"_"${FIRMWARE_AUTHOR}"_"${rainbow_Prefix}$firmwarefile
-        done
-        cd $FIRMWARE_PATH
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "STATUS=success" >> $GITHUB_ENV
-    - name : Upload packages
-      uses: actions/upload-artifact@main
-      if: env.STATUS == 'success'
-      with:
-        name: Padavan-packages
-        path: ${{ env.FIRMWARE }}
-    - name: Upload firmware to WeTransfer
-      if: env.STATUS == 'success' && github.event.inputs.uploadwet == 'true'
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep -o -E "https?://[a-zA-Z0-9\.\/_&=@$%?~#-]*")"
-        echo "WETRANSFER_URL=$(cat wetransfer.log | grep -o -E "https?://[a-zA-Z0-9\.\/_&=@$%?~#-]*")" >> $GITHUB_ENV
-    - name: Remove obsolete firmwares on artifacts
-      uses: c-hive/gha-remove-artifacts@v1.2.0
-      if: env.STATUS == 'success'
-      with:
-        age: '1 day'
-        skip-recent: 5
-    - name: PushPlus Notification
-      uses: vb1980/Action_PushPlus@master
-      if: env.STATUS == 'success' && github.event.inputs.pushplus == 'true'
-      with:
-        token: ${{ secrets.PUSHTOKEN }}
-        title: ${{ env.TARGET_NAME }}_Build_Completed
-        content: Congratulations,<br/>&nbsp;&nbsp;Your **${{ env.TARGET_NAME }}** padavan firmware build completed!<br/>&nbsp;&nbsp;🐮WeTransfer Download Url:${{ env.WETRANSFER_URL }}<br/>&nbsp;&nbsp;Enjoy it🎈🎁!
+      - name: Checkout
+        uses: actions/checkout@main
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install unzip libtool-bin curl cmake gperf gawk flex bison nano xxd fakeroot kmod \
+          cpio git python-docutils gettext automake autopoint texinfo build-essential help2man \
+          pkg-config zlib1g-dev libgmp3-dev libmpc-dev libmpfr-dev libncurses5-dev libltdl-dev wget libc-dev-bin
+          sudo timedatectl set-timezone "$TIME_ZONE"
+      - name: Clone source code
+        run: |
+          git clone --depth=1 $REPOSITORY_URL $WORK_PATH
+          cd $WORK_PATH/toolchain-mipsel
+          mkdir -p toolchain-3.4.x
+          wget $TOOLCHAIN_URL
+          tar -xvf mipsel-linux-uclibc.tar.xz -C toolchain-3.4.x
+      - name: Set golang
+        run: |
+          cp -f bashScripts/go.sh $(pwd)
+          sudo chmod 777 ./go.sh
+          bash ./go.sh
+      - name: Set busybox's version to compile
+        run: |
+          cd $WORK_PATH/trunk/user/busybox
+          sed -i "s/SRC_NAME=busybox.*/SRC_NAME=busybox-${{ github.event.inputs.busyboxver }}/g" ./Makefile
+          cd $WORK_PATH/trunk
+          sed -i "s/busybox_id=.*/busybox_id=\"${{ github.event.inputs.busyboxver }}\"/g" ./build_firmware_modify
+      - name: Apply rainbow themes
+        if: github.event.inputs.rainbowui == 'true'
+        run: |
+          cd $WORK_PATH/trunk/user/www
+          sed -i "s/WEBUI_NAME=n56u_ribbon_fixed/WEBUI_NAME=n56u_rainbow/g" ./Makefile
+      - name: Custom config
+        run: |
+          cd $WORK_PATH/trunk
+          if [ ! -f configs/templates/${{ github.event.inputs.target }}.config ] ; then
+          echo "configs/templates/${{ github.event.inputs.target }}.config not found"
+          exit 1
+          fi
+          cp -f configs/templates/${{ github.event.inputs.target }}.config .config
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
+          ################################################################################################
+          #因不同型号配置功能不一样，所以先把配置项删除，如果你自己要添加其他的，也要写上删除这一条，切记！！！
+          ################################################################################################
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER/d' .config #删除配置项SOFTETHERVPN
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT/d' .config #删除配置项SOFTETHERVPN
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD/d' .config #删除配置项SOFTETHERVPN   
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS/d' .config #删除配置项SS plus+
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SSSERVER/d' .config #删除配置项SS server
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SSOBFS/d' .config #删除配置项simple-obfs
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_V2RAY/d' .config #删除配置项v2ray
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_XRAY/d' .config #删除配置项xray
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_TROJAN/d' .config #删除配置项trojan
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_KUMASOCKS/d' .config #删除配置项socket5
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_IPT2SOCKS/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_MICROSOCKS/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SRELAY/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_TUNSAFE/d' .config #删除配置项TUNSAFE
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER/d' .config #删除配置项DNSFORWARDER
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPC/d' .config #删除配置项FRP Client
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_FRPS/d' .config #删除配置项FRPS Server
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_NPC/d' .config #删除配置项NPC
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_ADBYBY/d' .config #删除配置项adbyby plus+
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_KOOLPROXY/d' .config #删除配置项koolproxy
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SMARTDNS/d' .config #删除配置项smartdns
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN/d' .config #删除配置项smartdns执行文件
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME/d' .config #删除配置项adguardhome
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_ALIDDNS/d' .config #删除配置项阿里DDNS
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_ZEROTIER/d' .config #删除配置项ZEROTIER
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_CLOUDFLAREDDNS/d' .config #删除配置项CLOUDFLAREDDNS
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_NVPPROXY/d' .config #删除配置项NVPPROXY
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_DDNSTO/d' .config #删除配置项DDNSTO
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_WIREGUARD/d' .config #删除配置项WIREGUARD
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_CADDY/d' .config #删除配置项caddy
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_CADDYBIN/d' .config #删除配置项caddy执行文件
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_ALDRIVER/d' .config #删除配置项aldriver
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_WYY/d' .config #删除配置项wyy
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_WYYBIN/d' .config #删除配置项wyy执行文件
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_OPENVPN/d' .config
+          #校园网相关开始
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_MENTOHUST/d' .config #删除配置项MENTOHUST
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT/d' .config #删除配置项SCUTCLIENT
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_NAPT66/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_NJIT_CLIENT/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_MINIEAP/d' .config
+          sed -i '/CONFIG_FIRMWARE_INCLUDE_DOGCOM/d' .config
+          #校园网相关结束
+          sed -i 's/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=n/CONFIG_FIRMWARE_INCLUDE_OPENSSL_EXE=y/g' .config
+          ######################################################################
+          #以下选项是定义你需要的功能（y=集成,n=忽略），重新写入到.config文件
+          ######################################################################
+          echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_SERVER=n" >> .config #SOFTETHERVPN
+          echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CLIENT=n" >> .config #SOFTETHERVPN
+          echo "CONFIG_FIRMWARE_INCLUDE_SOFTETHERVPN_CMD=n" >> .config #SOFTETHERVPN
+          #科学相关
+          echo "CONFIG_FIRMWARE_INCLUDE_SHADOWSOCKS=n" >> .config #SS plus+
+          echo "CONFIG_FIRMWARE_INCLUDE_V2RAY=n" >> .config #集成v2ray执行文件（3.8M左右)
+          echo "CONFIG_FIRMWARE_INCLUDE_XRAY=n" >> .config #集成xray执行文件(5.6M左右)，可以代替v2ray，注：如果闪存太小不够还是建议使用v2ray
+          echo "CONFIG_FIRMWARE_INCLUDE_TROJAN=n" >> .config #集成trojan执行文件(1.1M左右)
+          echo "CONFIG_FIRMWARE_INCLUDE_SSOBFS=n" >> .config # simple-obfs混淆插件
+          echo "CONFIG_FIRMWARE_INCLUDE_SSSERVER=n" >> .config #SS server
+          echo "CONFIG_FIRMWARE_INCLUDE_KUMASOCKS=n" >> .config #socks5
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_IPT2SOCKS=n" >> .config
+          echo "CONFIG_FIRMWARE_INCLUDE_MICROSOCKS=n" >> .config
+          echo "CONFIG_FIRMWARE_INCLUDE_SRELAY=n" >> .config #可以不集成
+          echo "CONFIG_FIRMWARE_INCLUDE_TUNSAFE=n" >> .config #TUNSAFE
+          echo "CONFIG_FIRMWARE_INCLUDE_DNSFORWARDER=n" >> .config #DNSFORWARDER
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_FRPC=n" >> .config #内网穿透FRPC
+          echo "CONFIG_FIRMWARE_INCLUDE_FRPS=n" >> .config #内网穿透FRPS
+          echo "CONFIG_FIRMWARE_INCLUDE_NPC=n" >> .config #删除配置项NPC
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_ADBYBY=n" >> .config #adbyby plus+
+          echo "CONFIG_FIRMWARE_INCLUDE_KOOLPROXY=n" >> .config #KP广告过滤
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNS=n" >> .config #smartdns
+          echo "CONFIG_FIRMWARE_INCLUDE_SMARTDNSBIN=n" >> .config #smartdns二进制文件
+          echo "CONFIG_FIRMWARE_INCLUDE_ADGUARDHOME=n" >> .config
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_ALIDDNS=y" >> .config #阿里DDNS
+          echo "CONFIG_FIRMWARE_INCLUDE_ZEROTIER=n" >> .config #zerotier ~1.3M
+          echo "CONFIG_FIRMWARE_INCLUDE_CLOUDFLAREDDNS=n" >> .config #CLOUDFLAREDDNS
+          echo "CONFIG_FIRMWARE_INCLUDE_NVPPROXY=n" >> .config #NVPPROXY
+          echo "CONFIG_FIRMWARE_INCLUDE_DDNSTO=n" >> .config #DDNSTO
+          echo "CONFIG_FIRMWARE_INCLUDE_WIREGUARD=n" >> .config #WIREGUARD
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_CADDY=n" >> .config #在线文件管理服务
+          echo "CONFIG_FIRMWARE_INCLUDE_CADDYBIN=n" >> .config #集成caddu执行文件，此文件有13M,请注意固件大小。如果不集成，会从网上下载下来执行，不影响正常使用
+          echo "CONFIG_FIRMWARE_INCLUDE_ALDRIVER=n" >> .config #阿里云盘
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_WYY=n" >> .config #网易云解锁
+          echo "CONFIG_FIRMWARE_INCLUDE_WYYBIN=n" >> .config #网易云解锁GO版本执行文件（4M多）注意固件超大小,不集成会自动下载
+          #
+          echo "CONFIG_FIRMWARE_INCLUDE_OPENVPN=n" >> .config #openvpn
+          #校园网相关开始
+          echo "CONFIG_FIRMWARE_INCLUDE_MENTOHUST=n" >> .config #MENTOHUST
+          echo "CONFIG_FIRMWARE_INCLUDE_SCUTCLIENT=n" >> .config #SCUTCLIENT
+          echo "CONFIG_FIRMWARE_INCLUDE_NJIT_CLIENT=n" >> .config
+          echo "CONFIG_FIRMWARE_INCLUDE_MINIEAP=n" >> .config
+          echo "CONFIG_FIRMWARE_INCLUDE_DOGCOM=n" >> .config
+          echo "CONFIG_FIRMWARE_INCLUDE_NAPT66=n" >> .config
+          #校园网相关结束
+          #########################################################################################
+          #自定义添加其它功能请参考源码configs/templates/目录下的config文件。按照上面的格式添加即可
+          #格式如下：
+          #sed -i '/自定义项/d' .config
+          #echo "自定义项=y" >> .config
+          sed -i "s/FIRMWARE_BUILDS_REV=.*/FIRMWARE_BUILDS_REV=${{ github.event.inputs.firmwarever }}/g" ./versions.inc
+          echo '更新版本号时间'
+          #########################################################################################
+      - name: Build firmware
+        run: |
+          cd $WORK_PATH/trunk
+          sudo ./clear_tree
+          sudo ./build_firmware_modify ${{ github.event.inputs.target }} 0
+      - name: Organize firmware files
+        id: organize
+        run: |
+          mkdir -p $FIRMWARE_PATH/
+          cd $WORK_PATH/trunk
+          RAINBOW_PREFIX=""
+          if [ "${{ github.event.inputs.rainbowui }}" = "true" ]
+          then
+          RAINBOW_PREFIX="rainbow_"
+          fi
+          cd $WORK_PATH/trunk/images
+          for firmwarefile in $(ls *.trx)
+          do sudo mv $firmwarefile $FIRMWARE_PATH/${FIRMWARE_DATEPREFIX}"_"${FIRMWARE_AUTHOR}"_"${RAINBOW_PREFIX}_$firmwarefile
+          done
+          cd $FIRMWARE_PATH
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "STATUS=success" >> $GITHUB_ENV
+      - name : Upload packages
+        uses: actions/upload-artifact@main
+        if: env.STATUS == 'success'
+        with:
+          name: Padavan-packages
+          path: ${{ env.FIRMWARE }}
+      - name: Upload firmware to WeTransfer
+        if: env.STATUS == 'success' && github.event.inputs.uploadwet == 'true'
+        run: |
+          curl -fsSL git.io/file-transfer | sh
+          ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+          echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep -o -E "https?://[a-zA-Z0-9\.\/_&=@$%?~#-]*")"
+          echo "WETRANSFER_URL=$(cat wetransfer.log | grep -o -E "https?://[a-zA-Z0-9\.\/_&=@$%?~#-]*")" >> $GITHUB_ENV
+      - name: Remove obsolete firmwares on artifacts
+        uses: c-hive/gha-remove-artifacts@v1.2.0
+        if: env.STATUS == 'success'
+        with:
+          age: '1 day'
+          skip-recent: 5
+      - name: PushPlus Notification
+        uses: vb1980/Action_PushPlus@master
+        if: env.STATUS == 'success' && github.event.inputs.pushplus == 'true'
+        with:
+          token: ${{ secrets.PUSHTOKEN }}
+          title: ${{ github.event.inputs.target }}_Build_Completed
+          content: Congratulations,<br/>&nbsp;&nbsp;Your **${{ github.event.inputs.target }}** padavan firmware build completed!<br/>&nbsp;&nbsp;🐮WeTransfer Download Url:${{ env.WETRANSFER_URL }}<br/>&nbsp;&nbsp;Enjoy it🎈🎁!
